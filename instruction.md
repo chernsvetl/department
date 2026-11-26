@@ -11,11 +11,11 @@
 - `V2__data.sql` — начальное наполнение.
 
 Миграции накатываются автоматически при запуске приложения (история — в таблице
-`flyway_schema_history`). Можно выполнить их и вручную, например `mvn flyway:migrate`.
+`flyway_schema_history`). Можно выполнить их и вручную, например `./gradlew flywayMigrate` (нужен плагин) или через pgAdmin.
 
 ## 3. Наполнить базу данными
 Из прежней онтологии (`src/main/resources/main_students_all.owl`):
-`java ru.nsu.fit.chernyavtseva.department.db.OntologyMigrator src/main/resources/main_students_all.owl`
+`java -cp build/libs/department-1.0-SNAPSHOT.jar ru.nsu.fit.chernyavtseva.department.db.OntologyMigrator src/main/resources/main_students_all.owl`
 Мигратор дозаполняет базу: руководители/рецензенты, темы ВКР, студенты и их практики
 обновляются по ключам, существующие строки не дублируются.
 

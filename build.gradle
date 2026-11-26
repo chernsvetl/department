@@ -1,0 +1,56 @@
+plugins {
+    id 'java'
+    id 'checkstyle'
+}
+
+group = 'ru.nsu.fit.chernyavtseva'
+version = '1.0-SNAPSHOT'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.apache.poi:poi:5.2.0'
+    implementation 'org.apache.poi:poi-ooxml:5.1.0'
+    implementation 'com.github.petrovich4j:petrovich4j:1.1.0'
+    implementation 'org.flywaydb:flyway-core:9.22.3'
+    implementation 'org.postgresql:postgresql:42.7.15'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
+    testImplementation 'io.zonky.test:embedded-postgres:2.2.3'
+    // Бинарники PostgreSQL под Apple Silicon, для прогона тестов локально
+    testImplementation 'io.zonky.test.postgres:embedded-postgres-binaries-darwin-arm64v8:14.25.0'
+}
+
+checkstyle {
+    toolVersion = '10.12.4'
+    configFile = file('checkstyle.xml')
+    showViolations = true
+}
+
+checkstyleMain {
+    source = sourceSets.main.allJava
+}
+
+checkstyleTest {
+    source = sourceSets.test.allJava
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'failed'
+        showStandardStreams = false
+        exceptionFormat = 'full'
+    }
+}
