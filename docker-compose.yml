@@ -1,0 +1,19 @@
+# Локальный PostgreSQL для помощника секретаря кафедры.
+# Запуск: docker compose up -d
+# Контейнер создаёт базу "department"; таблицы и данные
+# накатывает приложение миграциями Flyway (db/migration) при первом запуске.
+services:
+  postgres:
+    image: postgres:17
+    container_name: department-postgres
+    environment:
+      POSTGRES_DB: department
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - department-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  department-postgres-data:

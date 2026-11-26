@@ -1,0 +1,45 @@
+# Пайплайн: 1) проверка стиля -> 2) сборка -> 3) тесты
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    name: "1. Чек стайл"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Checkstyle
+        run: mvn -B checkstyle:check
+
+  build:
+    name: "2. Сборка"
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Сборка проекта
+        run: mvn -B package -DskipTests
+
+  test:
+    name: "3. Тесты"
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Прогон тестов
+        run: mvn -B test
