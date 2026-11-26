@@ -62,6 +62,14 @@ public final class OntologyMigrator {
         }
     }
 
+    /**
+     * Переносит данные из онтологии по умолчанию (src/main/resources/main_students_all.owl)
+     * в базу данных — используется при запуске Main.
+     */
+    public static String migrate(Database database) throws IOException {
+        return migrate(database, Path.of("src/main/resources/main_students_all.owl"));
+    }
+
     public static String migrate(Database database, Path ontology) throws IOException {
         if (!Files.isRegularFile(ontology)) {
             throw new IllegalArgumentException("Файл онтологии не найден: " + ontology.toAbsolutePath());

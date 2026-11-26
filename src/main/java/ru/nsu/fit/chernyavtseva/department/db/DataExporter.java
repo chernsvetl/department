@@ -9,8 +9,6 @@ import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 
@@ -26,32 +24,25 @@ public final class DataExporter {
 
     private static final List<String> TABLES = List.of("department", "person", "thesis", "student", "practice");
     private static final List<String> DELETE_ORDER = List.of("practice", "student", "thesis", "person", "department");
-    private static final Pattern VERSION = Pattern.compile("V(\\d+)__");
-    private static final Path MIGRATION_DIR = Path.of("src/main/resources/db/migration");
+    private static final Path EXPORT_FILE = Path.of("db/data.sql");
 
     private DataExporter() {
     }
 
     public static void main(String[] args) throws IOException, SQLException {
         try (Database database = Database.open()) {
-            Path target = args.length > 0 ? Path.of(args[0]) : nextMigration();
-            Files.writeString(target, export(database), StandardCharsets.UTF_8);
-            System.out.println("Миграция с актуальным наполнением создана: " + target.toAbsolutePath());
+            exportToFile(database);
         }
     }
 
-    static Path nextMigration() throws IOException {
-        Files.createDirectories(MIGRATION_DIR);
-        try (Stream<Path> files = Files.list(MIGRATION_DIR)) {
-            int next = 2;
-            for (Path file : files.toList()) {
-                Matcher matcher = VERSION.matcher(file.getFileName().toString());
-                if (matcher.find()) {
-                    next = Math.max(next, Integer.parseInt(matcher.group(1)) + 1);
-                }
-            }
-            return MIGRATION_DIR.resolve("V" + next + "__data.sql");
-        }
+    /**
+     * Выгружает актуальное наполнение БД в db/data.sql.
+     * Файл генерируется автоматически при запуске Main и обновляется при каждом запуске.
+     */
+    public static void exportToFile(Database database) throws IOException {
+        Files.createDirectories(EXPORT_FILE.getParent());
+        Files.writeString(EXPORT_FILE, export(database), StandardCharsets.UTF_8);
+        System.out.println("Актуальные данные выгружены в " + EXPORT_FILE.toAbsolutePath());
     }
 
     static String export(Database database) {

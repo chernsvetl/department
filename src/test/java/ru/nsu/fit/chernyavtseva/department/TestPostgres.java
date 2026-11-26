@@ -12,8 +12,8 @@ import java.sql.Statement;
 
 /**
  * Общий для тестов встроенный PostgreSQL: запускается один раз на JVM,
- * под каждый тестовый класс создаётся своя пустая база (schema.sql).
- * Docker не нужен.
+ * под каждый тестовый класс создаётся своя база (структуру создаёт Liquibase,
+ * данные тесты наливают сами через OntologyMigrator). Docker не нужен.
  */
 public final class TestPostgres {
 

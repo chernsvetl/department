@@ -22,7 +22,7 @@ dependencies {
     implementation 'org.apache.poi:poi:5.2.0'
     implementation 'org.apache.poi:poi-ooxml:5.1.0'
     implementation 'com.github.petrovich4j:petrovich4j:1.1.0'
-    implementation 'org.flywaydb:flyway-core:9.22.3'
+    implementation 'org.liquibase:liquibase-core:4.27.0'
     implementation 'org.postgresql:postgresql:42.7.15'
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'

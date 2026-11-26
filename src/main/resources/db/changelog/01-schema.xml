@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                      http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <!-- Кафедра (онтология: Кафедра) -->
+    <changeSet id="create-department" author="chernsvetl">
+        <createTable tableName="department">
+            <column name="id" type="INTEGER" autoIncrement="true">
+                <constraints primaryKey="true" primaryKeyName="department_pk"/>
+            </column>
+            <column name="name" type="TEXT">
+                <constraints nullable="false" unique="true" uniqueConstraintName="department_name_uq"/>
+            </column>
+            <column name="head_name" type="TEXT"/>
+        </createTable>
+    </changeSet>
+
+    <!-- Онтология: Руководители (Руководитель_ВКР, Соруководитель_ВКР, Консультант,
+         Руководитель_от_НГУ, Руководитель_от_организации) и Рецензент -->
+    <changeSet id="create-person" author="chernsvetl">
+        <createTable tableName="person">
+            <column name="id" type="INTEGER" autoIncrement="true">
+                <constraints primaryKey="true" primaryKeyName="person_pk"/>
+            </column>
+            <column name="full_name" type="TEXT">
+                <constraints nullable="false" unique="true" uniqueConstraintName="person_full_name_uq"/>
+            </column>
+            <column name="thesis_position" type="TEXT"/>
+            <column name="thesis_position_short" type="TEXT"/>
+            <column name="academic_degree" type="TEXT"/>
+            <column name="position" type="TEXT"/>
+            <column name="ngsu_position" type="TEXT"/>
+            <column name="organization_position" type="TEXT"/>
+            <column name="signature_name" type="TEXT"/>
+            <column name="bachelor_date" type="TEXT"/>
+            <column name="bachelor_knis_date" type="TEXT"/>
+            <column name="master_mda_date" type="TEXT"/>
+            <column name="master_trps_date" type="TEXT"/>
+        </createTable>
+    </changeSet>
+
+    <!-- Онтология: ВКР и связи "согласовывает/руководит_с/консультирует/рецензирует" -->
+    <changeSet id="create-thesis" author="chernsvetl">
+        <createTable tableName="thesis">
+            <column name="id" type="INTEGER" autoIncrement="true">
+                <constraints primaryKey="true" primaryKeyName="thesis_pk"/>
+            </column>
+            <column name="topic" type="TEXT">
+                <constraints unique="true" uniqueConstraintName="thesis_topic_uq"/>
+            </column>
+            <column name="supervisor_id" type="INTEGER">
+                <constraints foreignKeyName="thesis_supervisor_fk" referencedTableName="person" referencedColumnNames="id"/>
+            </column>
+            <column name="co_supervisor_id" type="INTEGER">
+                <constraints foreignKeyName="thesis_co_supervisor_fk" referencedTableName="person" referencedColumnNames="id"/>
+            </column>
+            <column name="consultant_id" type="INTEGER">
+                <constraints foreignKeyName="thesis_consultant_fk" referencedTableName="person" referencedColumnNames="id"/>
+            </column>
+            <column name="reviewer_id" type="INTEGER">
+                <constraints foreignKeyName="thesis_reviewer_fk" referencedTableName="person" referencedColumnNames="id"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <!-- Онтология: Учащиеся (Бакалавриат/Магистратура) -->
+    <changeSet id="create-student" author="chernsvetl">
+        <createTable tableName="student">
+            <column name="id" type="INTEGER" autoIncrement="true">
+                <constraints primaryKey="true" primaryKeyName="student_pk"/>
+            </column>
+            <column name="department_id" type="INTEGER">
+                <constraints nullable="false" foreignKeyName="student_department_fk" referencedTableName="department" referencedColumnNames="id"/>
+            </column>
+            <column name="degree" type="TEXT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="course" type="INTEGER">
+                <constraints nullable="false"/>
+            </column>
+            <column name="full_name" type="TEXT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="group_name" type="TEXT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="profile" type="TEXT"/>
+            <column name="thesis_id" type="INTEGER">
+                <constraints foreignKeyName="student_thesis_fk" referencedTableName="thesis" referencedColumnNames="id"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <!-- Онтология: Практика студента -->
+    <changeSet id="create-practice" author="chernsvetl">
+        <createTable tableName="practice">
+            <column name="id" type="INTEGER" autoIncrement="true">
+                <constraints primaryKey="true" primaryKeyName="practice_pk"/>
+            </column>
+            <column name="student_id" type="INTEGER">
+                <constraints nullable="false" unique="true" uniqueConstraintName="practice_student_uq"
+                             foreignKeyName="practice_student_fk" referencedTableName="student" referencedColumnNames="id"/>
+            </column>
+            <column name="kind" type="TEXT"/>
+            <column name="place" type="TEXT"/>
+            <column name="full_place" type="TEXT"/>
+            <column name="organization_name" type="TEXT"/>
+            <column name="order_number" type="TEXT"/>
+            <column name="ngsu_supervisor_id" type="INTEGER">
+                <constraints foreignKeyName="practice_ngsu_supervisor_fk" referencedTableName="person" referencedColumnNames="id"/>
+            </column>
+            <column name="organization_supervisor_id" type="INTEGER">
+                <constraints foreignKeyName="practice_organization_supervisor_fk" referencedTableName="person" referencedColumnNames="id"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="student-identity-unique" author="chernsvetl">
+        <addUniqueConstraint tableName="student" constraintName="student_identity_uq"
+                             columnNames="degree, course, full_name, group_name"/>
+    </changeSet>
+
+    <changeSet id="student-degree-check" author="chernsvetl">
+        <sql>ALTER TABLE student ADD CONSTRAINT student_degree_check CHECK (degree IN ('Бакалавриат', 'Магистратура'))</sql>
+    </changeSet>
+</databaseChangeLog>

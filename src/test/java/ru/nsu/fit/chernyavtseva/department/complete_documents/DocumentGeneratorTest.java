@@ -34,6 +34,7 @@ class DocumentGeneratorTest {
     @BeforeAll
     static void prepareDatabase() {
         TestPostgres.createDatabase("documents");
+        TestPostgres.migrateOntology();
     }
 
     @Test

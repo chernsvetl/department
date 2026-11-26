@@ -1,7 +1,9 @@
 package ru.nsu.fit.chernyavtseva.department;
 
 import ru.nsu.fit.chernyavtseva.department.complete_documents.DocumentGenerator;
+import ru.nsu.fit.chernyavtseva.department.db.DataExporter;
 import ru.nsu.fit.chernyavtseva.department.db.Database;
+import ru.nsu.fit.chernyavtseva.department.db.OntologyMigrator;
 import ru.nsu.fit.chernyavtseva.department.query_model.QueryExecutor;
 
 import java.io.IOException;
@@ -16,6 +18,8 @@ public class Main {
 
     public static void main(String[] args) throws IOException {
         try (Database database = Database.open()) {
+            OntologyMigrator.migrate(database);
+            DataExporter.exportToFile(database);
             QueryExecutor executor = new QueryExecutor(database);
             for (Degree degree : DEGREES) {
                 DocumentGenerator.generate(degree, executor.findStudents(degree));
