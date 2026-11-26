@@ -1,6 +1,11 @@
 plugins {
     id 'java'
+    id 'application'
     id 'checkstyle'
+}
+
+application {
+    mainClass = 'ru.nsu.fit.chernyavtseva.department.Main'
 }
 
 group = 'ru.nsu.fit.chernyavtseva'

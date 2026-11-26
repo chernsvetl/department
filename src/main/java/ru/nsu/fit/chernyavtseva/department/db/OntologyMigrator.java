@@ -6,6 +6,7 @@ import org.w3c.dom.NodeList;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -18,13 +19,21 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Разовый перенос данных из онтологии кафедры (src/main/resources/main_students_all.owl) в базу данных.
+ * Перенос данных из онтологии кафедры в базу данных.
  *
- * <p>Запуск: java ru.nsu.fit.chernyavtseva.department.db.OntologyMigrator [путь к .owl].
- * Читает RDF/XML напрямую (без Jena): individuals онтологии превращаются в строки таблиц
+ * <p>По умолчанию онтология читается из classpath-ресурса /main_students_all.owl
+ * (файл лежит в src/main/resources) — так работает и при запуске из IDEA/Gradle, и из jar.
+ * Можно передать и путь к другому .owl-файлу.
+ *
+ * <p>Выполняется при каждом запуске Main: таблицы очищаются ({@link DbWriter#clearAll()}) и заново
+ * наполняются данными онтологии, поэтому наполнение базы всегда совпадает с онтологией.
+ *
+ * <p>Читает RDF/XML напрямую (без Jena): individuals онтологии превращаются в строки таблиц
  * person/thesis/student/practice, объектные свойства — в внешние ключи.
  */
 public final class OntologyMigrator {
+
+    private static final String ONTOLOGY_RESOURCE = "/main_students_all.owl";
 
     private static final String RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
     private static final String OWL = "http://www.w3.org/2002/07/owl#";
@@ -56,24 +65,40 @@ public final class OntologyMigrator {
     }
 
     public static void main(String[] args) throws IOException {
-        Path ontology = Path.of(args.length > 0 ? args[0] : "src/main/resources/main_students_all.owl");
         try (Database database = Database.open()) {
-            System.out.println(migrate(database, ontology));
+            if (args.length > 0) {
+                System.out.println(migrate(database, Path.of(args[0])));
+            } else {
+                System.out.println(migrate(database));
+            }
         }
     }
 
     /**
-     * Переносит данные из онтологии по умолчанию (src/main/resources/main_students_all.owl)
-     * в базу данных — используется при запуске Main.
+     * Переносит данные из онтологии, лежащей в resources (/main_students_all.owl),
+     * в базу данных — используется при каждом запуске Main: база очищается и наполняется заново.
      */
     public static String migrate(Database database) throws IOException {
-        return migrate(database, Path.of("src/main/resources/main_students_all.owl"));
+        InputStream resource = OntologyMigrator.class.getResourceAsStream(ONTOLOGY_RESOURCE);
+        if (resource == null) {
+            throw new IllegalArgumentException("Онтология не найдена в classpath: " + ONTOLOGY_RESOURCE);
+        }
+        try (InputStream ontology = resource) {
+            return migrate(database, ontology, "classpath:" + ONTOLOGY_RESOURCE);
+        }
     }
 
+    /** Переносит данные из .owl-файла по указанному пути. */
     public static String migrate(Database database, Path ontology) throws IOException {
         if (!Files.isRegularFile(ontology)) {
             throw new IllegalArgumentException("Файл онтологии не найден: " + ontology.toAbsolutePath());
         }
+        try (InputStream in = Files.newInputStream(ontology)) {
+            return migrate(database, in, ontology.toString());
+        }
+    }
+
+    private static String migrate(Database database, InputStream ontology, String source) throws IOException {
         Map<String, Individual> individuals = read(ontology);
         DepartmentData data = new DepartmentData(departmentName(individuals), departmentHead(individuals));
         Map<String, PersonData> persons = persons(individuals, data);
@@ -81,10 +106,11 @@ public final class OntologyMigrator {
         linkTheses(individuals, persons, theses);
         int[] students = students(individuals, data, persons, theses);
         try (DbWriter writer = new DbWriter(database)) {
+            writer.clearAll();
             writer.saveAll(data);
             writer.commit();
         }
-        return "Данные онтологии перенесены в базу данных " + database.url()
+        return "Данные онтологии (" + source + ") перенесены в базу данных " + database.url()
                 + ": руководителей и рецензентов " + persons.size()
                 + ", тем ВКР " + theses.size()
                 + ", студентов " + students[0] + " (бакалавров " + students[1] + ", магистрантов " + students[2] + ")"
@@ -110,12 +136,12 @@ public final class OntologyMigrator {
         }
     }
 
-    private static Map<String, Individual> read(Path ontology) throws IOException {
+    private static Map<String, Individual> read(InputStream ontology) throws IOException {
         try {
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
             factory.setNamespaceAware(true);
             factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            Document document = factory.newDocumentBuilder().parse(ontology.toFile());
+            Document document = factory.newDocumentBuilder().parse(ontology);
             Map<String, Individual> individuals = new LinkedHashMap<>();
             NodeList elements = document.getElementsByTagNameNS(OWL, "NamedIndividual");
             for (int i = 0; i < elements.getLength(); i++) {

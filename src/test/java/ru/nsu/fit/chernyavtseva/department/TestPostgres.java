@@ -5,7 +5,6 @@ import ru.nsu.fit.chernyavtseva.department.db.Database;
 import ru.nsu.fit.chernyavtseva.department.db.OntologyMigrator;
 
 import java.io.IOException;
-import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -45,7 +44,7 @@ public final class TestPostgres {
 
     public static void migrateOntology() {
         try (Database database = Database.open()) {
-            OntologyMigrator.migrate(database, Path.of("src/main/resources/main_students_all.owl"));
+            OntologyMigrator.migrate(database);
         } catch (IOException e) {
             throw new IllegalStateException("Не удалось перенести онтологию в тестовую базу", e);
         }

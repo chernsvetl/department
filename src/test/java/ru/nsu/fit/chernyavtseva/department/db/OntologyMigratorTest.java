@@ -7,28 +7,19 @@ import ru.nsu.fit.chernyavtseva.department.TestPostgres;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Перенос онтологии в БД: состав данных и свойства сущностей.
+ * Перенос онтологии в БД: состав данных, свойства сущностей и пересоздание наполнения при повторном запуске.
  */
 class OntologyMigratorTest {
 
     @BeforeAll
     static void prepareDatabase() throws SQLException {
         TestPostgres.createDatabase("migration");
-        try (Database database = Database.open()) {
-            // очищаем данные, чтобы проверить перенос именно мигратором (миграция V2 уже залила seed)
-            try (Statement statement = database.connection().createStatement()) {
-                for (String table : List.of("practice", "student", "thesis", "person")) {
-                    statement.execute("DELETE FROM " + table);
-                }
-            }
-        }
         TestPostgres.migrateOntology();
     }
 
@@ -74,6 +65,29 @@ class OntologyMigratorTest {
                 assertEquals("д.т.н.", rows.getString("academic_degree"));
                 assertEquals("профессор", rows.getString("ngsu_position"));
                 assertEquals("Барахнин В.Б.", rows.getString("signature_name"));
+            }
+        }
+    }
+
+    @Test
+    void rerunReplacesDataWithFreshOntologyContent() throws Exception {
+        // добавляем в базу строку, которой нет в онтологии
+        try (Database database = Database.open()) {
+            try (Statement statement = database.connection().createStatement()) {
+                statement.execute("INSERT INTO person (full_name) VALUES ('Лишний Руководитель')");
+            }
+        }
+        // повторный запуск миграции должен пересоздать наполнение с нуля
+        TestPostgres.migrateOntology();
+        try (Database database = Database.open()) {
+            assertEquals(74, count(database, "student"));
+            assertEquals(74, count(database, "thesis"));
+            assertEquals(0, count(database, "person", "full_name = 'Лишний Руководитель'"));
+            try (Statement statement = database.connection().createStatement();
+                 ResultSet rows = statement.executeQuery("SELECT id, head_name FROM department")) {
+                assertTrue(rows.next());
+                assertEquals(1, rows.getInt("id"), "счётчики id сбрасываются при пересоздании");
+                assertEquals("Пальчунов Дмитрий Евгеньевич", rows.getString("head_name"));
             }
         }
     }

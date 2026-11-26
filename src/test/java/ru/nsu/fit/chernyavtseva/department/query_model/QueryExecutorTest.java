@@ -6,8 +6,6 @@ import ru.nsu.fit.chernyavtseva.department.Degree;
 import ru.nsu.fit.chernyavtseva.department.TestPostgres;
 import ru.nsu.fit.chernyavtseva.department.db.Database;
 
-import java.sql.SQLException;
-import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 

@@ -4,6 +4,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.sql.Types;
 import java.util.Collections;
 import java.util.HashMap;
@@ -18,12 +19,14 @@ import java.util.stream.Stream;
  * department, person, thesis, student, practice.
  *
  * <p>Все изменения выполняются в одной транзакции: {@link #commit()} фиксирует её,
- * {@link #close()} без commit откатывает. Повторная запись тех же людей/тем/студентов
- * обновляет существующие строки (upsert), пустые поля существующих строк не затираются.
+ * {@link #close()} без commit откатывает. {@link #clearAll()} очищает все таблицы
+ * (со сбросом счётчиков id), поэтому после {@code clearAll() + saveAll() + commit()}
+ * наполнение базы полностью совпадает с переданными данными.
  */
 public final class DbWriter implements AutoCloseable {
 
     private static final String PERSON_SQL = personSql();
+    private static final String CLEAR_SQL = "TRUNCATE practice, student, thesis, person, department RESTART IDENTITY";
 
     private final Connection connection;
     private final boolean autoCommit;
@@ -36,6 +39,18 @@ public final class DbWriter implements AutoCloseable {
             connection.setAutoCommit(false);
         } catch (SQLException e) {
             throw new IllegalStateException("Не удалось начать транзакцию", e);
+        }
+    }
+
+    /**
+     * Очищает все таблицы кафедры со сбросом счётчиков id — выполняется в текущей
+     * транзакции, поэтому откат {@link #close()} вернёт прежнее наполнение.
+     */
+    public void clearAll() {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(CLEAR_SQL);
+        } catch (SQLException e) {
+            throw new IllegalStateException("Не удалось очистить таблицы базы данных: " + e.getMessage(), e);
         }
     }
 
