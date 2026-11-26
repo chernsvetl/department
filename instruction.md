@@ -40,3 +40,16 @@
 Из онтологии остался только файл данных `src/main/resources/main_students_all.owl`
 (именно его читает `OntologyMigrator`); TBox-схема теперь живёт в `db/schema.sql`,
 правила Cellfie и инструкция по Protege удалены (доступны в истории git).
+
+## Запуск из IDEA
+1. Открой папку проекта и импортируй его как Gradle-проект: в дереве проекта дважды кликни
+   `build.gradle` -> "Open as Gradle Project" -> Trust Project. Дождись окончания импорта
+   (справа появится панель Gradle, зависимости скачаются в фоне).
+2. Убедись, что PostgreSQL запущен (`docker compose up -d` либо свой сервер).
+3. Запусти `src/main/java/ru/nsu/fit/chernyavtseva/department/Main.java` — IDEA сама создаст
+   конфигурацию запуска Gradle с правильным classpath.
+
+Если запускаешь старой конфигурацией (например, оставшейся от Maven-версии),
+добавь в Run Configuration -> Modify options -> VM options:
+`-Ddb.url=jdbc:postgresql://localhost:5432/department -Ddb.user=postgres -Ddb.password=postgres`
+и замени classpath на Gradle-овский (`build/classes/java/main`; ресурсы — `src/main/resources`).

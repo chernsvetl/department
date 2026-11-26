@@ -81,6 +81,12 @@ public final class Database implements AutoCloseable {
                 config.setProperty(setting, System.getProperty(setting));
             }
         }
+        if (config.getProperty("db.url") == null) {
+            throw new IllegalStateException("Не задан db.url — файл db.properties не найден в classpath.\n"
+                    + "Запускай приложение через конфигурацию Gradle в IDEA (после импорта build.gradle), "
+                    + "либо добавь в VM options: -Ddb.url=jdbc:postgresql://localhost:5432/department "
+                    + "-Ddb.user=postgres -Ddb.password=postgres");
+        }
         return config;
     }
 
