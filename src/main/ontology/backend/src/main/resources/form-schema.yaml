@@ -1,0 +1,79 @@
+# Form schema for the student application form.
+# namespace is used to expand prop and range local names to full OWL URIs.
+# entity:   student — which individual this property belongs to
+# type:     datatype | object — literal value vs individual reference
+# range:    local name of the OWL class for object properties (used for individual search)
+# reversed: true — OWL direction is <value> <prop> <entityUri> instead of <entityUri> <prop> <value>
+# mainName: true — value of this field is used as the individual's rdf:about local name (spaces removed)
+
+namespace: "http://www.semanticweb.org/oleyn/ontologies/2022/4/кафедра#"
+
+sections:
+
+  - title: "Данные студента"
+    fields:
+      - prop: "ФИО"
+        entity: student
+        type: datatype
+        label: "ФИО студента"
+        required: true
+        mainName: true
+        hint: "Фамилия Имя Отчество полностью"
+
+      - prop: "группа"
+        entity: student
+        type: datatype
+        label: "Группа"
+        required: true
+
+      - prop: "Профиль_обучения"
+        entity: student
+        type: datatype
+        label: "Профиль обучения"
+        required: false
+
+  - title: "Место практики"
+    fields:
+      - prop: "Место_практики_полное_наименование"
+        entity: student
+        type: datatype
+        label: "Полное наименование места практики"
+        required: false
+
+      - prop: "Наименование_организации"
+        entity: student
+        type: datatype
+        label: "Наименование организации"
+        required: false
+
+      - prop: "Приказ_на_прохождение_практики"
+        entity: student
+        type: datatype
+        label: "Номер приказа на прохождение практики"
+        required: false
+
+  - title: "Руководители практики"
+    fields:
+      - prop: "пишет_вкр_у"
+        entity: student
+        type: object
+        label: "Руководитель практики от НГУ"
+        range: "Руководитель_от_НГУ"
+        required: false
+        hint: "Начните вводить ФИО"
+
+      # - prop: "на_НГУ_практике_у"
+      #   entity: student
+      #   type: object
+      #   label: "Руководитель практики от НГУ"
+      #   range: "Руководитель_от_НГУ"
+      #   required: false
+      #   hint: "Начните вводить ФИО"
+
+      # - prop: "на_орг_практике_у"
+      #   entity: student
+      #   type: object
+      #   label: "Руководитель практики от организации"
+      #   range: "Руководитель_от_организации"
+      #   required: false
+      #   hint: "Начните вводить ФИО"

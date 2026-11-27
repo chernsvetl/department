@@ -5,25 +5,39 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
 import javax.xml.parsers.DocumentBuilderFactory;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 
 /**
  * Перенос данных из онтологии кафедры в базу данных.
  *
- * <p>По умолчанию онтология читается из classpath-ресурса /main_students_all.owl
- * (файл лежит в src/main/resources) — так работает и при запуске из IDEA/Gradle, и из jar.
- * Можно передать и путь к другому .owl-файлу.
+ * <p>Главный источник онтологии — граф Fuseki системы сбора заполнений
+ * (поднимается через src/main/ontology/docker-compose.yml; эндпоинт Graph Store Protocol
+ * задаётся параметром ontology.fuseki в db.properties, по умолчанию
+ * http://localhost:3030/ontology/data). После успешного чтения граф сохраняется в файл
+ * онтологии (параметр ontology.file, по умолчанию src/main/java/ru/nsu/fit/chernyavtseva/
+ * department/ontology/main_students_all.owl) — файл всегда остаётся синхронной копией графа
+ * и работает как фолбэк, если Fuseki недоступен. Если файла нет — classpath-ресурс
+ * main_students_all.owl из того же пакета.
  *
  * <p>Выполняется при каждом запуске Main: таблицы очищаются ({@link DbWriter#clearAll()}) и заново
  * наполняются данными онтологии, поэтому наполнение базы всегда совпадает с онтологией.
@@ -33,7 +47,14 @@ import java.util.Set;
  */
 public final class OntologyMigrator {
 
-    private static final String ONTOLOGY_RESOURCE = "/main_students_all.owl";
+    private static final String ONTOLOGY_RESOURCE = "/ru/nsu/fit/chernyavtseva/department/ontology/main_students_all.owl";
+    private static final String CONFIG_FILE = "/db.properties";
+    private static final String FUSEKI_PROPERTY = "ontology.fuseki";
+    private static final String DEFAULT_FUSEKI = "http://localhost:3030/ontology/data";
+    private static final String FILE_PROPERTY = "ontology.file";
+    private static final String DEFAULT_ONTOLOGY_FILE =
+            "src/main/java/ru/nsu/fit/chernyavtseva/department/ontology/main_students_all.owl";
+    private static final Duration FUSEKI_TIMEOUT = Duration.ofSeconds(5);
 
     private static final String RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
     private static final String OWL = "http://www.w3.org/2002/07/owl#";
@@ -75,10 +96,41 @@ public final class OntologyMigrator {
     }
 
     /**
-     * Переносит данные из онтологии, лежащей в resources (/main_students_all.owl),
-     * в базу данных — используется при каждом запуске Main: база очищается и наполняется заново.
+     * Переносит данные из онтологии в базу данных — используется при каждом запуске Main
+     * и системой сбора после отправки формы. База очищается и наполняется заново.
+     * Источники по порядку: граф Fuseki (после чтения сохраняется в файл онтологии),
+     * файл по пути ontology.file, classpath-ресурс main_students_all.owl.
      */
     public static String migrate(Database database) throws IOException {
+        String fuseki = fusekiEndpoint();
+        if (fuseki != null) {
+            byte[] graph;
+            try (InputStream ontology = fetchFuseki(fuseki)) {
+                graph = ontology.readAllBytes();
+            } catch (IOException | InterruptedException e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                System.out.println("Онтология Fuseki (" + fuseki + ") недоступна: " + message(e)
+                        + " — читаю файл онтологии");
+                graph = null;
+            }
+            if (graph != null) {
+                saveOntologyFile(graph);
+                try (InputStream ontology = new ByteArrayInputStream(graph)) {
+                    return migrate(database, ontology, fuseki);
+                }
+            }
+        }
+        Path file = ontologyFile();
+        if (file != null) {
+            try (InputStream ontology = Files.newInputStream(file)) {
+                return migrate(database, ontology, file.toString());
+            } catch (NoSuchFileException e) {
+                System.out.println("Файла онтологии нет: " + file.toAbsolutePath()
+                        + " — читаю " + ONTOLOGY_RESOURCE + " из ресурсов");
+            }
+        }
         InputStream resource = OntologyMigrator.class.getResourceAsStream(ONTOLOGY_RESOURCE);
         if (resource == null) {
             throw new IllegalArgumentException("Онтология не найдена в classpath: " + ONTOLOGY_RESOURCE);
@@ -86,6 +138,60 @@ public final class OntologyMigrator {
         try (InputStream ontology = resource) {
             return migrate(database, ontology, "classpath:" + ONTOLOGY_RESOURCE);
         }
+    }
+
+    /**
+     * Сохраняет граф Fuseki (RDF/XML) в файл онтологии — файл остаётся синхронной копией
+     * графа и фолбэком на случай, когда Fuseki недоступен. Ошибка записи не мешает переносу:
+     * в консоль выводится предупреждение.
+     */
+    private static void saveOntologyFile(byte[] graph) {
+        Path file = ontologyFile();
+        if (file == null) {
+            return;
+        }
+        try {
+            if (file.getParent() != null) {
+                Files.createDirectories(file.getParent());
+            }
+            Files.write(file, graph);
+            System.out.println("Граф Fuseki сохранён в файл онтологии " + file);
+        } catch (IOException e) {
+            System.out.println("Не удалось сохранить граф Fuseki в " + file.toAbsolutePath()
+                    + ": " + message(e));
+        }
+    }
+
+    /**
+     * Путь к файлу онтологии: системное свойство ontology.file, переменная окружения
+     * ONTOLOGY_FILE, параметр ontology.file в db.properties либо путь по умолчанию
+     * (main_students_all.owl в пакете ontology). Относительный путь разрешается от рабочего каталога.
+     */
+    private static Path ontologyFile() {
+        String value = configValue(FILE_PROPERTY);
+        Path path = value == null || value.isBlank() ? Path.of(DEFAULT_ONTOLOGY_FILE) : Path.of(value.trim());
+        return path.isAbsolute() ? path : Path.of("").toAbsolutePath().resolve(path);
+    }
+
+    /** Значение параметра: системное свойство, затем переменная окружения, затем db.properties. */
+    private static String configValue(String property) {
+        String value = System.getProperty(property);
+        if (value == null) {
+            value = System.getenv(property.toUpperCase(Locale.ROOT).replace('.', '_'));
+        }
+        if (value != null) {
+            return value;
+        }
+        try (InputStream in = OntologyMigrator.class.getResourceAsStream(CONFIG_FILE)) {
+            if (in != null) {
+                Properties config = new Properties();
+                config.load(in);
+                return config.getProperty(property);
+            }
+        } catch (IOException e) {
+            return null;
+        }
+        return null;
     }
 
     /** Переносит данные из .owl-файла по указанному пути. */
@@ -96,6 +202,44 @@ public final class OntologyMigrator {
         try (InputStream in = Files.newInputStream(ontology)) {
             return migrate(database, in, ontology.toString());
         }
+    }
+
+    /**
+     * Эндпоинт Graph Store Protocol Fuseki: системное свойство ontology.fuseki,
+     * переменная окружения ONTOLOGY_FUSEKI или параметр ontology.fuseki в db.properties
+     * (по умолчанию http://localhost:3030/ontology/data). Пустое значение или off отключает Fuseki.
+     */
+    private static String fusekiEndpoint() {
+        String value = configValue(FUSEKI_PROPERTY);
+        if (value == null) {
+            return DEFAULT_FUSEKI;
+        }
+        String endpoint = value.trim();
+        return endpoint.isEmpty() || "off".equalsIgnoreCase(endpoint) ? null : endpoint;
+    }
+
+    /** Выгружает граф онтологии из Fuseki в формате RDF/XML. */
+    private static InputStream fetchFuseki(String endpoint) throws IOException, InterruptedException {
+        String separator = endpoint.contains("?") ? "&" : "?";
+        HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint + separator + "default"))
+                .header("Accept", "application/rdf+xml")
+                .timeout(FUSEKI_TIMEOUT)
+                .GET()
+                .build();
+        HttpResponse<InputStream> response = HttpClient.newBuilder()
+                .connectTimeout(FUSEKI_TIMEOUT)
+                .build()
+                .send(request, HttpResponse.BodyHandlers.ofInputStream());
+        if (response.statusCode() != 200) {
+            response.body().close();
+            throw new IOException("HTTP " + response.statusCode());
+        }
+        return response.body();
+    }
+
+    private static String message(Exception e) {
+        String text = e.getMessage();
+        return text == null || text.isBlank() ? e.getClass().getSimpleName() : text;
     }
 
     private static String migrate(Database database, InputStream ontology, String source) throws IOException {
@@ -143,36 +287,47 @@ public final class OntologyMigrator {
             factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             Document document = factory.newDocumentBuilder().parse(ontology);
             Map<String, Individual> individuals = new LinkedHashMap<>();
-            NodeList elements = document.getElementsByTagNameNS(OWL, "NamedIndividual");
-            for (int i = 0; i < elements.getLength(); i++) {
-                Element element = (Element) elements.item(i);
-                String iri = local(element.getAttributeNS(RDF, "about"));
-                Set<String> types = new LinkedHashSet<>();
-                Map<String, List<String>> literals = new HashMap<>();
-                Map<String, List<String>> links = new HashMap<>();
-                NodeList properties = element.getChildNodes();
-                for (int j = 0; j < properties.getLength(); j++) {
-                    if (!(properties.item(j) instanceof Element property)) {
-                        continue;
-                    }
-                    String name = property.getLocalName();
-                    if (RDF.equals(property.getNamespaceURI()) && "type".equals(name)) {
-                        types.add(local(property.getAttributeNS(RDF, "resource")));
-                    } else if (ONTOLOGY.equals(property.getNamespaceURI())) {
-                        Map<String, List<String>> target = property.hasAttributeNS(RDF, "resource") ? links : literals;
-                        String value = property.hasAttributeNS(RDF, "resource")
-                                ? local(property.getAttributeNS(RDF, "resource"))
-                                : property.getTextContent();
-                        target.computeIfAbsent(name, key -> new ArrayList<>()).add(value);
-                    }
-                }
-                individuals.put(iri, new Individual(iri, types, literals, links));
-            }
+            // individual кодируются двумя способами: <owl:NamedIndividual rdf:about=...> (Protege)
+            // и <rdf:Description rdf:about=...> с вложенным <rdf:type rdf:resource="owl#NamedIndividual">
+            // (выгрузка Fuseki/Jena). Схема и классы в rdf:Description не имеют нужных типов
+            // и отфильтровываются дальше сами.
+            collect(document.getElementsByTagNameNS(OWL, "NamedIndividual"), individuals);
+            collect(document.getElementsByTagNameNS(RDF, "Description"), individuals);
             return individuals;
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {
             throw new IllegalArgumentException("Не удалось прочитать онтологию " + ontology + ": " + e.getMessage(), e);
+        }
+    }
+
+    private static void collect(NodeList elements, Map<String, Individual> individuals) {
+        for (int i = 0; i < elements.getLength(); i++) {
+            Element element = (Element) elements.item(i);
+            String iri = local(element.getAttributeNS(RDF, "about"));
+            if (iri.isEmpty() || individuals.containsKey(iri)) {
+                continue;
+            }
+            Set<String> types = new LinkedHashSet<>();
+            Map<String, List<String>> literals = new HashMap<>();
+            Map<String, List<String>> links = new HashMap<>();
+            NodeList properties = element.getChildNodes();
+            for (int j = 0; j < properties.getLength(); j++) {
+                if (!(properties.item(j) instanceof Element property)) {
+                    continue;
+                }
+                String name = property.getLocalName();
+                if (RDF.equals(property.getNamespaceURI()) && "type".equals(name)) {
+                    types.add(local(property.getAttributeNS(RDF, "resource")));
+                } else if (ONTOLOGY.equals(property.getNamespaceURI())) {
+                    Map<String, List<String>> target = property.hasAttributeNS(RDF, "resource") ? links : literals;
+                    String value = property.hasAttributeNS(RDF, "resource")
+                            ? local(property.getAttributeNS(RDF, "resource"))
+                            : property.getTextContent();
+                    target.computeIfAbsent(name, key -> new ArrayList<>()).add(value);
+                }
+            }
+            individuals.put(iri, new Individual(iri, types, literals, links));
         }
     }
 
@@ -204,6 +359,7 @@ public final class OntologyMigrator {
         for (Individual individual : individuals.values()) {
             mentionedByStudents.addAll(individual.linksTo("на_НГУ_практике_у"));
             mentionedByStudents.addAll(individual.linksTo("на_орг_практике_у"));
+            mentionedByStudents.addAll(individual.linksTo("пишет_вкр_у"));
         }
         Map<String, PersonData> persons = new HashMap<>();
         for (Individual individual : individuals.values()) {
@@ -293,7 +449,7 @@ public final class OntologyMigrator {
             practice.setFullPlace(individual.literal("Место_практики_полное_наименование"));
             practice.setOrganizationName(individual.literal("Наименование_организации"));
             practice.setOrder(individual.literal("Приказ_на_прохождение_практики"));
-            practice.setNgsuSupervisor(persons.get(individual.link("на_НГУ_практике_у")));
+            practice.setNgsuSupervisor(persons.get(ngsuSupervisorIri(individual)));
             practice.setOrganizationSupervisor(persons.get(individual.link("на_орг_практике_у")));
             total++;
             if (BACHELOR.equals(degree)) {
@@ -306,6 +462,16 @@ public final class OntologyMigrator {
             }
         }
         return new int[]{total, bachelors, masters, practices};
+    }
+
+    /**
+     * Руководитель практики от НГУ: классическое свойство онтологии на_НГУ_практике_у,
+     * а для заполнений из веб-формы — пишет_вкр_у (форма отправляет
+     * руководителя этим свойством).
+     */
+    private static String ngsuSupervisorIri(Individual individual) {
+        String iri = individual.link("на_НГУ_практике_у");
+        return iri != null ? iri : individual.link("пишет_вкр_у");
     }
 
     private static String degree(Individual individual) {

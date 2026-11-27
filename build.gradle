@@ -8,6 +8,15 @@ application {
     mainClass = 'ru.nsu.fit.chernyavtseva.department.Main'
 }
 
+// Перенос онтологии в БД отдельным запуском (используется системой сбора после отправки формы):
+// ./gradlew migrateOntology
+tasks.register('migrateOntology', JavaExec) {
+    group = 'application'
+    description = 'Переносит данные онтологии (Fuseki или файл) в базу данных PostgreSQL'
+    mainClass = 'ru.nsu.fit.chernyavtseva.department.db.OntologyMigrator'
+    classpath = sourceSets.main.runtimeClasspath
+}
+
 group = 'ru.nsu.fit.chernyavtseva'
 version = '1.0-SNAPSHOT'
 
@@ -17,6 +26,12 @@ java {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
+}
+
+// онтология лежит рядом с кодом (пакет ...department.ontology) — включаем её в ресурсы
+sourceSets.main.resources {
+    srcDir 'src/main/java'
+    exclude '**/*.java'
 }
 
 repositories {
