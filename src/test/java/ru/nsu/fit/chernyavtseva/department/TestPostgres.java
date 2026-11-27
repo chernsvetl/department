@@ -36,6 +36,9 @@ public final class TestPostgres {
             System.setProperty("db.url", postgres.getJdbcUrl("postgres", database));
             System.setProperty("db.user", "postgres");
             System.setProperty("db.password", "postgres");
+            // тесты мигрируют из файла ресурсов, а не из Fuseki — иначе результат зависит от того,
+            // запущен ли локально Fuseki системы сбора
+            System.setProperty("ontology.fuseki", "off");
             return postgres.getJdbcUrl("postgres", database);
         } catch (SQLException | IOException e) {
             throw new IllegalStateException("Не удалось подготовить тестовую базу данных", e);

@@ -2,8 +2,11 @@ package ru.nsu.fit.chernyavtseva.department.db;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import ru.nsu.fit.chernyavtseva.department.TestPostgres;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -91,6 +94,82 @@ class OntologyMigratorTest {
             }
         }
     }
+
+    @Test
+    void migratesFormSupervisorProperty(@TempDir Path dir) throws Exception {
+        // веб-форма отправляет руководителя практики от НГУ свойством пишет_вкр_у:
+        // у Иванова — только пишет_вкр_у, у Петрова — и на_НГУ_практике_у (приоритетнее)
+        Path owl = dir.resolve("form.owl");
+        Files.writeString(owl, ONTOLOGY_WITH_FORM_PROPERTIES);
+        try (Database database = Database.open()) {
+            OntologyMigrator.migrate(database, owl);
+            assertEquals("Петров Пётр Петрович", practiceNgsuSupervisor(database, "Иванов Иван"));
+            assertEquals("Сидоров Сидор Сидорович", practiceNgsuSupervisor(database, "Пётр Петров"));
+        }
+        // возвращаем базе наполнение из основной онтологии — от него зависят остальные тесты
+        TestPostgres.migrateOntology();
+    }
+
+    @Test
+    void fallsBackToFileWhenFusekiUnavailable() throws Exception {
+        String fuseki = System.getProperty("ontology.fuseki");
+        System.setProperty("ontology.fuseki", "http://localhost:1/ontology/data");
+        try (Database database = Database.open()) {
+            // Fuseki недоступен — данные берутся из файла онтологии (ontology.file),
+            // при его отсутствии — из classpath-ресурса main_students_all.owl
+            assertTrue(OntologyMigrator.migrate(database).contains("main_students_all.owl"));
+        } finally {
+            if (fuseki == null) {
+                System.clearProperty("ontology.fuseki");
+            } else {
+                System.setProperty("ontology.fuseki", fuseki);
+            }
+        }
+    }
+
+    private static String practiceNgsuSupervisor(Database database, String student) throws SQLException {
+        try (Statement statement = database.connection().createStatement();
+             ResultSet rows = statement.executeQuery(
+                     "SELECT person.full_name FROM practice "
+                             + "JOIN student ON student.id = practice.student_id "
+                             + "JOIN person ON person.id = practice.ngsu_supervisor_id "
+                             + "WHERE student.full_name = '" + student + "'")) {
+            assertTrue(rows.next(), "руководитель практики не найден: " + student);
+            String name = rows.getString(1);
+            assertFalse(rows.next());
+            return name;
+        }
+    }
+
+    private static final String ONTOLOGY_WITH_FORM_PROPERTIES = """
+            <?xml version="1.0"?>
+            <rdf:RDF xmlns="http://www.semanticweb.org/oleyn/ontologies/2022/4/кафедра#"
+                 xml:base="http://www.semanticweb.org/oleyn/ontologies/2022/4/кафедра"
+                 xmlns:owl="http://www.w3.org/2002/07/owl#"
+                 xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+                <owl:NamedIndividual rdf:about="http://www.semanticweb.org/oleyn/ontologies/2022/4/кафедра#ИвановИван">
+                    <rdf:type rdf:resource="http://www.semanticweb.org/oleyn/ontologies/2022/4/кафедра#Бакалавриат"/>
+                    <ФИО>Иванов Иван</ФИО>
+                    <группа>ПИиКН-4-01</группа>
+                    <пишет_вкр_у rdf:resource="http://www.semanticweb.org/oleyn/ontologies/2022/4/кафедра#ПетровПетр"/>
+                </owl:NamedIndividual>
+                <owl:NamedIndividual rdf:about="http://www.semanticweb.org/oleyn/ontologies/2022/4/кафедра#ПётрПетров">
+                    <rdf:type rdf:resource="http://www.semanticweb.org/oleyn/ontologies/2022/4/кафедра#Бакалавриат"/>
+                    <ФИО>Пётр Петров</ФИО>
+                    <группа>ПИиКН-4-01</группа>
+                    <пишет_вкр_у rdf:resource="http://www.semanticweb.org/oleyn/ontologies/2022/4/кафедра#СидоровСидор"/>
+                    <на_НГУ_практике_у rdf:resource="http://www.semanticweb.org/oleyn/ontologies/2022/4/кафедра#СидоровСидор"/>
+                </owl:NamedIndividual>
+                <owl:NamedIndividual rdf:about="http://www.semanticweb.org/oleyn/ontologies/2022/4/кафедра#ПетровПетр">
+                    <rdf:type rdf:resource="http://www.semanticweb.org/oleyn/ontologies/2022/4/кафедра#Руководитель_от_НГУ"/>
+                    <ФИО>Петров Пётр Петрович</ФИО>
+                </owl:NamedIndividual>
+                <owl:NamedIndividual rdf:about="http://www.semanticweb.org/oleyn/ontologies/2022/4/кафедра#СидоровСидор">
+                    <rdf:type rdf:resource="http://www.semanticweb.org/oleyn/ontologies/2022/4/кафедра#Руководитель_от_НГУ"/>
+                    <ФИО>Сидоров Сидор Сидорович</ФИО>
+                </owl:NamedIndividual>
+            </rdf:RDF>
+            """;
 
     private static int count(Database database, String table, String where) throws SQLException {
         try (Statement statement = database.connection().createStatement();

@@ -11,10 +11,19 @@
 приложения (история — в таблицах `DATABASECHANGELOG` / `DATABASECHANGELOGLOCK`).
 
 ## 3. Наполнить базу данными
-Из прежней онтологии (`src/main/resources/main_students_all.owl`) — это происходит
-автоматически при каждом запуске `Main`: таблицы очищаются и заново наполняются
-данными онтологии (`OntologyMigrator`), поэтому наполнение базы всегда совпадает
-с онтологией. Отдельный запуск: `java ru.nsu.fit.chernyavtseva.department.db.OntologyMigrator`
+Из онтологии. Главный источник — граф Fuseki системы сбора заполнений
+(поднимается в `src/main/ontology`: `docker compose up -d`; туда данные пишет веб-форма).
+После чтения граф сохраняется в файл онтологии `ontology.file` из `db.properties`
+(по умолчанию `src/main/java/ru/nsu/fit/chernyavtseva/department/ontology/main_students_all.owl`) —
+файл всегда остаётся копией графа. Если Fuseki недоступен — берётся этот файл,
+если и файла нет — classpath-ресурс `main_students_all.owl`.
+Происходит автоматически при каждом запуске `Main`: таблицы очищаются и заново наполняются
+данными онтологии (`OntologyMigrator`), поэтому наполнение базы всегда совпадает с онтологией.
+Эндпоинт Fuseki задаётся в `db.properties` (`ontology.fuseki`), системным свойством
+`-Dontology.fuseki=...`, переменной `ONTOLOGY_FUSEKI`; пусто или `off` — всегда читать файл.
+Система сбора запускает этот же перенос автоматически после каждой отправки формы
+(бэкенд выполняет `./gradlew migrateOntology`); отдельно перенос запускается так же:
+`./gradlew migrateOntology` или `java ru.nsu.fit.chernyavtseva.department.db.OntologyMigrator`
 (или с путём к другому .owl-файлу) делает то же самое.
 
 ## Генерация документов
@@ -32,8 +41,9 @@
 
 ## Легаси: онтология через Protege
 Прежний способ наполнения (Protege + Cellfie + SPARQL) заменён базой данных.
-Из онтологии остался только файл данных `src/main/resources/main_students_all.owl`
-(именно его читает `OntologyMigrator` при каждом запуске); TBox-схема теперь живёт
+Из онтологии остался только файл данных
+`src/main/java/ru/nsu/fit/chernyavtseva/department/ontology/main_students_all.owl`
+(его читает `OntologyMigrator`, когда Fuseki недоступен); TBox-схема теперь живёт
 в changelog Liquibase, правила Cellfie и инструкция по Protege удалены (доступны в истории git).
 
 ## Запуск из IDEA
